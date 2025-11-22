@@ -1,0 +1,12 @@
+#!/bin/bash
+
+. "$(dirname "$0")/common"
+. "$(dirname "$0")/defaults"
+
+
+PROCESS_NAME="enshrouded_serv"
+
+if [[ $( ps -ax -o stat,comm | grep $PROCESS_NAME | awk '{ print $1 }') =~ ^S.*$ ]] ; then
+  info "Pausing Enshrouded process"
+  pkill -STOP $PROCESS_NAME
+fi

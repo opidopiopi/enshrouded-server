@@ -1,0 +1,121 @@
+#!/bin/bash
+
+. "$(dirname "$0")/common"
+. "$(dirname "$0")/defaults"
+
+
+PROCESS_NAME="enshrouded_serv"
+processExists() {
+  [[ -n "$(ps -ax -o comm | grep $PROCESS_NAME)" ]]
+}
+
+serverRunning() {
+  [[ $(ps -ax -o stat,comm | grep $PROCESS_NAME | awk '{ print $1 }') =~ ^S.*$ ]]
+}
+
+checkServerEmpty() {
+  local connected_players
+
+  connected_players=$(python3 -c "
+try:
+    import a2s
+    print(len(a2s.players(('127.0.0.1',${SERVER_QUERYPORT:-15637}))))
+except Exception as e:
+    print('null')
+")
+
+  debug "[checkServerEmpty] connected_players: $connected_players"
+  if [ -n "$connected_players" ] && [ "$connected_players" != "null" ] && [ "$connected_players" -gt 0 ]; then
+    return 1
+  fi
+
+  return 0
+}
+
+currentUptime() {
+  awk '{print $1}' /proc/uptime | cut -d . -f 1
+}
+
+
+# wait for server to start
+while :
+do
+  if processExists ; then
+    break
+  fi
+  sleep 1
+done
+
+
+/usr/sbin/knockd -d -i "$AUTOPAUSE_KNOCK_INTERFACE"
+
+STATE=INIT
+
+
+while :
+do
+  case X$STATE in
+  XINIT)
+    TIME_THRESH=$(($(currentUptime)+$AUTOPAUSE_TIMEOUT_INIT))
+
+    info "Server listening for connections - pausing in $AUTOPAUSE_TIMEOUT_INIT seconds"
+
+    STATE=K
+    ;;
+  XK)
+    # Knocked
+    if ! checkServerEmpty ; then
+      info "Client connected - waiting for disconnect"
+      STATE=E
+    else
+      if [[ $(currentUptime) -ge $TIME_THRESH ]] ; then
+        echo "No client connected since startup / knocked - pausing"
+	"$(dirname "$0")/enshrouded-pause"
+        STATE=S
+      fi
+    fi
+    ;;
+  XE)
+    # Established
+    if checkServerEmpty ; then
+      TIME_THRESH=$(($(currentUptime)+$AUTOPAUSE_TIMEOUT_EST))
+      info "All clients disconnected - pausing in $AUTOPAUSE_TIMEOUT_EST seconds"
+      STATE=I
+    fi
+    ;;
+  XI)
+    # Idle
+    if ! checkServerEmpty ; then
+      info "Client reconnected - waiting for disconnect"
+      STATE=E
+    elif [ -e /data/.skip-pause ] ; then
+      TIME_THRESH=$(($(currentUptime)+$AUTOPAUSE_TIMEOUT_EST))
+      info "'/data/.skip-pause' file is present - skipping pausing"
+      STATE=E
+    else
+      if [[ $(currentUptime) -ge $TIME_THRESH ]] ; then
+        info "No client reconnected - pausing"
+	"$(dirname "$0")/enshrouded-pause"
+        STATE=S
+      fi
+    fi
+    ;;
+  XS)
+    # Stopped
+    if serverRunning ; then
+      if ! checkServerEmpty ; then
+        echo "Client connected - waiting for disconnect"
+        STATE=E
+      else
+        TIME_THRESH=$(($(currentUptime)+$AUTOPAUSE_TIMEOUT_KN))
+        echo "Server was knocked - waiting for clients or timeout"
+        STATE=K
+      fi
+    fi
+    ;;
+  *)
+    echo "Error: invalid state: $STATE"
+    ;;
+  esac
+  sleep "$AUTOPAUSE_PERIOD"
+done

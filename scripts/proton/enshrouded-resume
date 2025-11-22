@@ -1,0 +1,8 @@
+#!/bin/bash
+
+PROCESS_NAME="enshrouded_serv"
+
+if [[ $( ps -ax -o stat,comm | grep $PROCESS_NAME | awk '{ print $1 }') =~ ^T.*$ ]] ; then
+  info "Resuming Enshrouded process"
+  pkill -CONT $PROCESS_NAME
+fi

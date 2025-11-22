@@ -28,16 +28,18 @@ LABEL maintainer="docker@mornedhels.de"
 RUN dpkg --add-architecture i386 \
     && apt-get update \
     && DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
-        curl \
-        supervisor \
         cron \
-        rsyslog \
+        curl \
         jq \
-        zip \
-        python3 \
-        python3-pip \
+        knockd \
+        libcap2-bin \
         libfreetype6 \
         libfreetype6:i386 \
+        python3 \
+        python3-pip \
+        rsyslog \
+        supervisor \
+        zip \
     && apt autoremove --purge && apt clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
@@ -53,11 +55,13 @@ RUN mkdir -p /usr/local/etc /var/log/supervisor /var/run/enshrouded /usr/local/e
     && ln -f /root/.steam/sdk32/steamclient.so /home/enshrouded/.steam/sdk32/steamclient.so \
     && ln -f /root/.steam/sdk64/steamclient.so /home/enshrouded/.steam/sdk64/steamclient.so \
     && sed -i '/imklog/s/^/#/' /etc/rsyslog.conf \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
+    && setcap cap_net_raw=ep /usr/sbin/knockd
 
 COPY --from=builder /tmp/proton /usr/local/bin
 COPY --from=builder /etc/machine-id /etc/machine-id
 
+COPY ../knockd.conf /etc/knockd.conf
 COPY ../supervisord.conf /etc/supervisor/supervisord.conf
 COPY --chmod=755 ../scripts/default/* ../scripts/proton/* /usr/local/etc/enshrouded/
 
